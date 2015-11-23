@@ -14,7 +14,7 @@
 #include "fat.h"
 #include "dos.h"
 
-//testing git pull CK
+
 void usage(char *progname) {
     fprintf(stderr, "usage: %s <imagename>\n", progname);
     exit(1);
