@@ -27,6 +27,7 @@ typedef struct Node {
     char name[9];
     char ext[4];
     uint32_t size;
+    uint16_t sc;
     int numOfClusters;
 	struct Node *next;
 } dNode;
@@ -34,12 +35,13 @@ typedef struct Node {
 dNode *head = NULL; // make global
 dNode *tail = NULL; //   ""
 
-void add(dNode **h, dNode **t, char *n, char *e, uint32_t s) {
+void add(dNode **h, dNode **t, char *n, char *e, uint32_t s, uint16_t sc, int num) {
 	dNode *new = calloc(1,sizeof(dNode)); // setup
 	new->size = s;
 	strcpy(new->name,n);
 	strcpy(new->ext,e);
-	new->numOfClusters = 1;
+	new->sc = sc;
+	new->numOfClusters = num;
 	new->next = NULL;
 	if (*h == NULL && *t == NULL) {
 		*h = new;
@@ -54,13 +56,24 @@ void add(dNode **h, dNode **t, char *n, char *e, uint32_t s) {
 }
 dNode *go_to(dNode *h, char *s) {
 	for (; h; h = h->next) { 
-		if (strcmp(h->name, s) != 0) {
+		//printf("\t\t\t%s %s\n",h->name,s);
+		if (strcmp(h->name, s) == 0) {
 			return h;
 		}
 	} return NULL;
 }
 
-uint16_t check_dirent(struct direntry *dirent, int level)
+int getCN(uint16_t s, uint8_t *image_buf, struct bpb33* bpb) {
+	int i = 1;
+	uint16_t cluster = s;
+	while (is_valid_cluster(cluster, bpb))
+    {
+    	i++;
+		cluster = get_fat_entry(cluster, image_buf, bpb);
+    } return i;
+}
+
+uint16_t check_dirent(struct direntry *dirent, uint8_t *image_buf, struct bpb33* bpb)
 {
     uint16_t followclust = 0;
 
@@ -69,6 +82,7 @@ uint16_t check_dirent(struct direntry *dirent, int level)
     char extension[4];
     uint32_t size;
     uint16_t file_cluster;
+    
     name[8] = ' ';
     extension[3] = ' ';
     memcpy(name, &(dirent->deName[0]), 8);
@@ -147,15 +161,15 @@ uint16_t check_dirent(struct direntry *dirent, int level)
 	int arch = (dirent->deAttributes & ATTR_ARCHIVE) == ATTR_ARCHIVE;*/
 
 	size = getulong(dirent->deFileSize);
-	printf("%s\n", name);
+	
 	dNode *t;
 	if ((t = go_to(head,name)) != NULL) { // fix go_to URGENT
 		printf("\tfound %s\n", t->name);
-		t->numOfClusters++;
+		//t->numOfClusters++;
 	} else {
-		add(&head,&tail,name,extension,size);
-		printf("\t%s\n", head->name);
-		printf("\t%s\n", tail->name);
+		int num = getCN(getushort(dirent->deStartCluster), image_buf, bpb);
+		add(&head,&tail,name,extension,size,getushort(dirent->deStartCluster),num);
+		
 	}
 	//print_indent(indent);
 	/*printf("%s.%s (%u bytes) (starting cluster %d) %c%c%c%c\n", 
@@ -185,7 +199,7 @@ void follow_dir(uint16_t cluster, int level,
 	for ( ; i < numDirEntries; i++)
 	{
             // action
-            uint16_t followclust = check_dirent(dirent, level);
+            uint16_t followclust = check_dirent(dirent, image_buf, bpb);
             // print_dirent(dirent, indent);
             if (followclust)
                 follow_dir(followclust, level+1, image_buf, bpb);
@@ -207,7 +221,7 @@ void traverse_root(uint8_t *image_buf, struct bpb33* bpb)
     for ( ; i < bpb->bpbRootDirEnts; i++)
     {
         //  action
-        uint16_t followclust = check_dirent(dirent, 0);
+        uint16_t followclust = check_dirent(dirent, image_buf, bpb);
         // print_dirent(dirent, 0);
         if (is_valid_cluster(followclust, bpb))
             follow_dir(followclust, 1, image_buf, bpb);
@@ -237,9 +251,30 @@ int main(int argc, char** argv) {
 
     // your code should start here...
 	traverse_root(image_buf, bpb);
+	printf("\n");
 	for (dNode *h=head; h != NULL; h=h->next) {
-		printf("\t%s.%s (%u b) ? (%d c)\n", h->name, h->ext, h->size, h->numOfClusters*512);
+		uint32_t s = h->size;
+		int n = h->numOfClusters*512 - 512;
+		printf("\t%s.%s (%u b) ? (%d sc) ? (%d l)\n", h->name, h->ext, s, h->sc, n);
+		/*if (s % 512 == 0) {
+			printf("%s\n", s == n ? "Fine" : "Not Fine");
+		} */
+		printf("\t\t");
+		if (s == n) {
+			printf("Fine.\n");
+		} else if (s > n) {
+			int diff = ((int)s - n) / 512;
+			if (((int)s - n) % 512 != 0) {
+				diff++;
+			}
+			printf("Needs %d more\n", diff);
+		} else if (s > n - 512) {
+			printf("Fine, I guess...\n");
+		} else {
+			printf("Has too many allocated by %d\n", (n - (int) s) / 512);
+		}
 	}
+	printf("\n");
 
 
 
