@@ -97,7 +97,7 @@ struct bpb33* check_bootsector(uint8_t *image_buf)
     struct bpb33* bpb_aligned;
 
 #ifdef DEBUG
-    fprintf(stderr, "Size of BPB: %lu\n", sizeof(struct bootsector33));
+    fprintf(stderr, "Size of BPB: %u\n", sizeof(struct bootsector33));
 #endif
 
     bootsect = (struct bootsector33*)image_buf;
@@ -230,7 +230,7 @@ void set_fat_entry(uint16_t clusternum, uint16_t value,
 int is_valid_cluster(uint16_t cluster, struct bpb33 *bpb)
 {
     uint16_t max_cluster = (bpb->bpbSectors / bpb->bpbSecPerClust) & FAT12_MASK;
-
+	//printf("\n\nChris Debugging:\nfirst: %d, %x\nlast: %d, %x\nmax: %d, %x\n\n", (FAT12_MASK & CLUST_FIRST), (FAT12_MASK & CLUST_FIRST), (FAT12_MASK & CLUST_LAST), (FAT12_MASK & CLUST_LAST), max_cluster, max_cluster);
     if (cluster >= (FAT12_MASK & CLUST_FIRST) && 
         cluster <= (FAT12_MASK & CLUST_LAST) &&
         cluster < max_cluster)

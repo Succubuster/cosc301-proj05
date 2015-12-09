@@ -275,6 +275,28 @@ int main(int argc, char** argv) {
 		}
 	}
 	printf("\n");
+	
+	uint8_t *base = root_dir_addr(image_buf, bpb) + getushort(bpb->bpbRootDirEnts) * sizeof(struct direntry);
+	uint8_t *p; 
+	uint16_t bs = getushort(bpb->bpbBytesPerSec) * bpb->bpbSecPerClust;
+	int free_count = 0;
+    //p = root_dir_addr(image_buf, bpb);
+    /*if (cluster != MSDOSFSROOT) {
+
+		base += ;
+	}*/
+	
+	for (int n = (CLUST_FIRST & FAT12_MASK); n < (CLUST_LAST & FAT12_MASK); n++) {
+		p = base + bs * n; // pointer hopping
+		uint8_t val = *p;
+		if ((val & CLUST_FREE) == 1) {
+			free_count++;
+		}
+    }
+    printf("\tFrees: %d\n", free_count);
+    
+	
+	
 
 
 
