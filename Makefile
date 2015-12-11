@@ -1,6 +1,6 @@
 # variables and directives that get used in the makefile
 CC = clang
-CFLAGS = -g -Wall -DDEBUG=1
+CFLAGS = -g -Wall -DDEBUG=0
 CPPFLAGS = 
 PROGRAMS = dos_ls dos_cp dos_cat scandisk
 COMMONOBJ = dos.o
