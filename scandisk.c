@@ -21,7 +21,7 @@
 	printf(" ");
 }*/
 
-typedef struct Node {
+/*typedef struct Node {
 	////struct dirent *file;
 	// needed for 1: name, size, numofclusters
     char name[9];
@@ -29,19 +29,22 @@ typedef struct Node {
     uint32_t size;
     uint16_t sc;
     int numOfClusters;
+    uint16_t *allChain;
 	struct Node *next;
 } dNode;
 
-dNode *head = NULL; // make global
-dNode *tail = NULL; //   ""
 
-void add(dNode **h, dNode **t, char *n, char *e, uint32_t s, uint16_t sc, int num) {
+//uint16_t allocated[100];
+//int numAllocated = 0;
+
+void add(dNode **h, dNode **t, char *n, char *e, uint32_t s, uint16_t sc, int num, uint16_t ** arr) {
 	dNode *new = calloc(1,sizeof(dNode)); // setup
 	new->size = s;
 	strcpy(new->name,n);
 	strcpy(new->ext,e);
 	new->sc = sc;
 	new->numOfClusters = num;
+	new->allChain = (uint16_t *) (*arr);
 	new->next = NULL;
 	if (*h == NULL && *t == NULL) {
 		*h = new;
@@ -63,17 +66,45 @@ dNode *go_to(dNode *h, char *s) {
 	} return NULL;
 }
 
-int getCN(uint16_t s, uint8_t *image_buf, struct bpb33* bpb) {
-	int i = 1;
-	uint16_t cluster = s;
-	while (is_valid_cluster(cluster, bpb))
-    {
-    	i++;
-		cluster = get_fat_entry(cluster, image_buf, bpb);
-    } return i;
+int in(uint16_t target, uint16_t *arr, int arrlen) {
+	for (int i = 0; i < arrlen; i++) {
+		if (arr[i] == target) {
+			return 0;
+		}
+	} return -1;
 }
 
-uint16_t check_dirent(struct direntry *dirent, uint8_t *image_buf, struct bpb33* bpb)
+int searchAllChains(dNode *h, uint16_t target) {
+	for (;h;h=h->next) {
+		if (in(target,h->allChain,h->numOfClusters) == 0) {
+			return 0;
+		}
+	} return -1;
+}
+
+int getCN(uint16_t s, uint16_t** arr, uint8_t *image_buf, struct bpb33* bpb) {
+	int i = 0;
+	uint16_t cluster = s;
+	//while (!is_end_of_file(cluster)) // not sure which is better
+	while (is_valid_cluster(cluster, bpb)) 
+    {
+    	i++;
+    	//allocated[numAllocated++] = cluster;
+    	printf("%d\n",cluster);
+		cluster = get_fat_entry(cluster, image_buf, bpb);
+    } 
+    printf("\n");
+   	uint16_t *temp_arr = malloc(sizeof(uint16_t)*i);
+   	cluster = s;
+   	for (int x = 0; x < i; x++) {
+   		temp_arr[x] = cluster;
+   		cluster = get_fat_entry(cluster,image_buf,bpb);
+   	}
+   	*arr = temp_arr;
+    return i;
+}*/
+
+uint16_t check_dirent(struct direntry *dirent, uint8_t *image_buf, struct bpb33* bpb, int *clust_map)
 {
     uint16_t followclust = 0;
 
@@ -124,26 +155,10 @@ uint16_t check_dirent(struct direntry *dirent, uint8_t *image_buf, struct bpb33*
 	    break;
     }
 
-    if ((dirent->deAttributes & ATTR_WIN95LFN) == ATTR_WIN95LFN)
+    if ((dirent->deAttributes & ATTR_DIRECTORY) != 0) 
     {
-	// ignore any long file name extension entries
-	//
-	// printf("Win95 long-filename entry seq 0x%0x\n", dirent->deName[0]);
-    }
-    else if ((dirent->deAttributes & ATTR_VOLUME) != 0) 
-    {
-	//printf("Volume: %s\n", name);
-    } 
-    else if ((dirent->deAttributes & ATTR_DIRECTORY) != 0) 
-    {
-        // don't deal with hidden directories; MacOS makes these
-        // for trash directories and such; just ignore them.
-		if ((dirent->deAttributes & ATTR_HIDDEN) != ATTR_HIDDEN)
+        if ((dirent->deAttributes & ATTR_HIDDEN) != ATTR_HIDDEN)
         {
-	    	//print_indent(indent);
-    	    //printf("%s/ (directory)\n", name);
-            
-            
             // when done, give next dest 
             file_cluster = getushort(dirent->deStartCluster);
             followclust = file_cluster;
@@ -151,44 +166,72 @@ uint16_t check_dirent(struct direntry *dirent, uint8_t *image_buf, struct bpb33*
     }
     else 
     {
-        /*
-         * a "regular" file entry
-         * attributes, size, starting cluster, etc.
-         */
-	/*int ro = (dirent->deAttributes & ATTR_READONLY) == ATTR_READONLY;
-	int hidden = (dirent->deAttributes & ATTR_HIDDEN) == ATTR_HIDDEN;
-	int sys = (dirent->deAttributes & ATTR_SYSTEM) == ATTR_SYSTEM;
-	int arch = (dirent->deAttributes & ATTR_ARCHIVE) == ATTR_ARCHIVE;*/
-
-	size = getulong(dirent->deFileSize);
+     	size = getulong(dirent->deFileSize);
 	
-	dNode *t;
-	if ((t = go_to(head,name)) != NULL) { // fix go_to URGENT
-		printf("\tfound %s\n", t->name);
-		//t->numOfClusters++;
-	} else {
-		int num = getCN(getushort(dirent->deStartCluster), image_buf, bpb);
-		add(&head,&tail,name,extension,size,getushort(dirent->deStartCluster),num);
+		/*dNode *t;
+		if ((t = go_to(head,name)) != NULL) { // fix go_to URGENT
+			printf("\tfound %s\n", t->name);
+			//t->numOfClusters++;
+		} else {
+			uint16_t *arr;
+			int num = getCN(getushort(dirent->deStartCluster), &arr, image_buf, bpb);
+			add(&head,&tail,name,extension,size,getushort(dirent->deStartCluster),num,&arr);
 		
-	}
-	//print_indent(indent);
-	/*printf("%s.%s (%u bytes) (starting cluster %d) %c%c%c%c\n", 
-	       name, extension, size, getushort(dirent->deStartCluster),
-	       ro?'r':' ', 
-               hidden?'h':' ', 
-               sys?'s':' ', 
-               arch?'a':' ');*/
-    }
-
-    return followclust;
+		}*/
+		
+		int numOfClusters = 0;
+		uint16_t cluster = getushort(dirent->deStartCluster);
+		while (is_valid_cluster(cluster, bpb)) 
+		{
+			int clust_state = clust_map[cluster]++;
+			numOfClusters++;
+			if (clust_state > 1) {
+				printf("Weird behavior at %d\n", cluster);
+			}
+			
+			//printf("%d\n",cluster);
+			cluster = get_fat_entry(cluster, image_buf, bpb);
+		}
+		
+		int n = numOfClusters*512;
+		printf("%s.%s (%u b) ? (%d sc) ? (%d l)\n", name, extension, size, getushort(dirent->deStartCluster), n);
+		printf("\t");
+		if (size == n) {
+			printf("Fine.\n");
+		} else if (size > n) {
+			int diff = ((int)size - n) / 512;
+			if (((int)size - n) % 512 != 0) {
+				diff++;
+			}
+			//printf("Needs %d more allocated\n", diff);
+			
+			
+			printf("%d unrecoverable, metadata shortened from %d to %d",size-n,dirent->deFileSize,(diff-1)*512);
+			putulong(dirent->deFileSize,(diff - 1) * 512);
+		} else if (size > n - 512) {
+			printf("Fine, I guess...\n");
+		} else {
+			printf("Has too many allocated by %d\n", (n - (int) size) / 512);
+			cluster = getushort(dirent->deStartCluster);
+			int i = 1;
+			printf("\n");
+			while (is_valid_cluster(cluster, bpb) && i != numOfClusters) {
+				printf("%d, ", cluster);
+				i++;
+				cluster = get_fat_entry(cluster, image_buf, bpb);
+			}
+			printf("\n");
+			uint16_t extra = get_fat_entry(cluster,image_buf,bpb);
+			clust_map[extra]--;
+			set_fat_entry(extra,CLUST_FREE&FAT12_MASK,image_buf,bpb);
+			set_fat_entry(cluster, CLUST_EOFS&FAT12_MASK,image_buf,bpb);
+			
+				
+		}
+	} return followclust;
 }
 
-
-
-
-
-void follow_dir(uint16_t cluster, int level,
-		uint8_t *image_buf, struct bpb33* bpb)
+void follow_dir(uint16_t cluster, uint8_t *image_buf, struct bpb33* bpb, int *clust_map)
 {
     while (is_valid_cluster(cluster, bpb))
     {
@@ -199,19 +242,19 @@ void follow_dir(uint16_t cluster, int level,
 	for ( ; i < numDirEntries; i++)
 	{
             // action
-            uint16_t followclust = check_dirent(dirent, image_buf, bpb);
+            uint16_t followclust = check_dirent(dirent, image_buf, bpb, clust_map);
             // print_dirent(dirent, indent);
-            if (followclust)
-                follow_dir(followclust, level+1, image_buf, bpb);
-            dirent++;
+            if (followclust) {
+            	clust_map[followclust]++;
+                follow_dir(followclust, image_buf, bpb, clust_map);
+            } dirent++;
 	}
 	// this is important
 	cluster = get_fat_entry(cluster, image_buf, bpb);
     }
 }
 
-
-void traverse_root(uint8_t *image_buf, struct bpb33* bpb)
+void traverse_root(uint8_t *image_buf, struct bpb33* bpb, int *clust_map)
 {
     uint16_t cluster = 0;
 
@@ -221,10 +264,12 @@ void traverse_root(uint8_t *image_buf, struct bpb33* bpb)
     for ( ; i < bpb->bpbRootDirEnts; i++)
     {
         //  action
-        uint16_t followclust = check_dirent(dirent, image_buf, bpb);
+        uint16_t followclust = check_dirent(dirent, image_buf, bpb, clust_map);
         // print_dirent(dirent, 0);
-        if (is_valid_cluster(followclust, bpb))
-            follow_dir(followclust, 1, image_buf, bpb);
+        if (is_valid_cluster(followclust, bpb)) {
+        	clust_map[followclust]++;
+            follow_dir(followclust, image_buf, bpb, clust_map);
+        }
 
         dirent++;
     }
@@ -249,16 +294,46 @@ int main(int argc, char** argv) {
     image_buf = mmap_file(argv[1], &fd);
     bpb = check_bootsector(image_buf);
 
-    // your code should start here...
-	traverse_root(image_buf, bpb);
+    int *cluster_map = malloc(sizeof(int) * bpb->bpbSectors);
+	for (int i = 0; i < bpb->bpbSectors; i++) {
+		cluster_map[i] = 0; // no refs
+	}
+	
 	printf("\n");
+	traverse_root(image_buf,bpb,cluster_map);
+	
+	// orphan saving...
+	printf("\n");
+	for (int i = CLUST_FIRST; i < bpb->bpbSectors; i++) {
+		uint16_t r = get_fat_entry(i,image_buf,bpb);
+		if (cluster_map[i] == 0) {
+			if (r == (CLUST_FREE & FAT12_MASK)) {
+				//printf("Confused?: %d\n", i);
+			} else if (r == (CLUST_BAD & FAT12_MASK)) {
+				printf("Bad?: %d\n", i);
+			} else {
+				printf("Orphan?: %d\n", i);
+			}
+		}
+	}
+	
+	
+	
+    
+    
+    
+    
+    
+    // your code should start here...
+	//traverse_root(image_buf, bpb);
+	/*printf("\n");
 	for (dNode *h=head; h != NULL; h=h->next) {
 		uint32_t s = h->size;
-		int n = h->numOfClusters*512 - 512;
+		int n = h->numOfClusters*512;
 		printf("\t%s.%s (%u b) ? (%d sc) ? (%d l)\n", h->name, h->ext, s, h->sc, n);
-		/*if (s % 512 == 0) {
+		if (s % 512 == 0) {
 			printf("%s\n", s == n ? "Fine" : "Not Fine");
-		} */
+		}
 		printf("\t\t");
 		if (s == n) {
 			printf("Fine.\n");
@@ -274,33 +349,53 @@ int main(int argc, char** argv) {
 			printf("Has too many allocated by %d\n", (n - (int) s) / 512);
 		}
 	}
-	printf("\n");
+	printf("\n");*/
 	
-	uint8_t *base = root_dir_addr(image_buf, bpb) + getushort(bpb->bpbRootDirEnts) * sizeof(struct direntry);
+	/*uint8_t *base = root_dir_addr(image_buf, bpb) + getushort(bpb->bpbRootDirEnts) * sizeof(struct direntry);
 	uint8_t *p; 
 	uint16_t bs = getushort(bpb->bpbBytesPerSec) * bpb->bpbSecPerClust;
-	int free_count = 0;
+	int free_count = 0;*/
     //p = root_dir_addr(image_buf, bpb);
     /*if (cluster != MSDOSFSROOT) {
 
 		base += ;
 	}*/
 	
-	for (int n = (CLUST_FIRST & FAT12_MASK); n < (CLUST_LAST & FAT12_MASK); n++) {
+	/*for (int n = (CLUST_FIRST & FAT12_MASK); n < (CLUST_LAST & FAT12_MASK); n++) {
 		p = base + bs * n; // pointer hopping
 		uint8_t val = *p;
 		if ((val & CLUST_FREE) == 1) {
 			free_count++;
 		}
     }
-    printf("\tFrees: %d\n", free_count);
-    
+    printf("\tFrees: %d\n", free_count);*/
+    //printf("\t\t");
+    //uint16_t arrlen = (bpb->bpbSectors / bpb->bpbSecPerClust) & FAT12_MASK;
+    //uint16_t ff[arrlen-2];
+   //for (uint16_t num = CLUST_FIRST; is_valid_cluster(num,bpb) /*&& num < 905  print in intervals of 1000 or use sleep below*/; num++) {
+    	/*uint16_t res = get_fat_entry(num,image_buf,bpb) & FAT12_MASK;
+    	//printf("\tResult from FAT: %d\n", res);
+    	//ff[(num-CLUST_FIRST)] = res;
+    	printf("%d -> ", num);
+    	if (res == (CLUST_FREE & FAT12_MASK)) {
+    		printf("free\n");
+    	} else if (res == (CLUST_BAD & FAT12_MASK)) {
+    		printf("bad\n");
+    	} else if (is_end_of_file(res)) {
+    		printf("eof\n");
+    	} else {
+    		printf("%d\n",res);
+    		if (searchAllChains(head,num) == -1) {
+    			printf("\t\tsomething happened.\n");
+    		} else {
+    			//printf("\t\tSomething else happened.\n");
+    		}
+    	} usleep(200000);
+    }*/
+    //printf("\n");
+    //dNode *head = NULL; // maybe obsol?
+	//dNode *tail = NULL; //   ""
 	
-	
-
-
-
-
-    unmmap_file(image_buf, &fd);
+  	unmmap_file(image_buf, &fd);
     return 0;
 }
